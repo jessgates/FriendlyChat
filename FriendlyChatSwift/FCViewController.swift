@@ -24,17 +24,17 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     
     // MARK: Properties
     
-    var ref: FIRDatabaseReference!
-    var messages: [FIRDataSnapshot]! = []
+    var ref: DatabaseReference!
+    var messages = [DataSnapshot]()
     var msglength: NSNumber = 1000
-    var storageRef: FIRStorageReference!
-    var remoteConfig: FIRRemoteConfig!
+    var storageRef: StorageReference!
+    var remoteConfig: RemoteConfig!
     let imageCache = NSCache<NSString, UIImage>()
     var keyboardOnScreen = false
     var placeholderImage = UIImage(named: "ic_account_circle")
-    fileprivate var _refHandle: FIRDatabaseHandle!
-    fileprivate var _authHandle: FIRAuthStateDidChangeListenerHandle!
-    var user: FIRUser?
+    fileprivate var _refHandle: DatabaseHandle!
+    fileprivate var _authHandle: AuthStateDidChangeListenerHandle!
+    var user: User?
     var displayName = "Anonymous"
     
     // MARK: Outlets
@@ -54,7 +54,6 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     
     override func viewDidLoad() {
         self.signedInStatus(isSignedIn: true)
-        
         // TODO: Handle what users see when view loads
     }
     
@@ -71,6 +70,12 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     
     func configureDatabase() {
         // TODO: configure database to sync messages
+        ref = Database.database().reference()
+        _refHandle = ref.child("messages").observe(.childAdded, with: { (snapshot: DataSnapshot) in
+            self.messages.append(snapshot)
+            self.messagesTable.insertRows(at: [IndexPath(row: self.messages.count - 1, section: 0)], with: .automatic)
+            self.scrollToBottomMessage()
+        })
     }
     
     func configureStorage() {
@@ -79,6 +84,7 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     
     deinit {
         // TODO: set up what needs to be deinitialized when view is no longer being used
+        ref.child("messages").removeObserver(withHandle: _refHandle)
     }
     
     // MARK: Remote Config
@@ -109,6 +115,8 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
             backgroundBlur.effect = nil
             messageTextField.delegate = self
             
+            configureDatabase()
+            
             // TODO: Set up app to send and receive messages when signed in
         }
     }
@@ -122,6 +130,9 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     
     func sendMessage(data: [String:String]) {
         // TODO: create method that pushes message to the firebase database
+        var mdata = data
+        mdata[Constants.MessageFields.name] = displayName
+        ref.child("messages").childByAutoId().setValue(mdata)
     }
     
     func sendPhotoMessage(photoData: Data) {
@@ -162,7 +173,7 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     
     @IBAction func signOut(_ sender: UIButton) {
         do {
-            try FIRAuth.auth()?.signOut()
+            try Auth.auth().signOut()
         } catch {
             print("unable to sign out: \(error)")
         }
@@ -201,8 +212,16 @@ extension FCViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         // dequeue cell
         let cell: UITableViewCell! = messagesTable.dequeueReusableCell(withIdentifier: "messageCell", for: indexPath)
-        return cell!
         // TODO: update cell to display message data
+        let messageSnapshot: DataSnapshot! = messages[indexPath.row]
+        let message = messageSnapshot.value as! [String:String]
+        let name = message[Constants.MessageFields.name] ?? "[username]"
+        let text = message[Constants.MessageFields.text] ?? "[message]"
+        cell.textLabel?.text = name + ": " + text
+        cell.imageView?.image = self.placeholderImage
+        
+        return cell!
+        
     }
     
     func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
